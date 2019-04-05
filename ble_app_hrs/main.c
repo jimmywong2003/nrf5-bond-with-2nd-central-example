@@ -384,12 +384,13 @@ static void on_bonded (pm_peer_id_t const * p_handle, uint16_t event_size)
         }
         stop_advertising_bond_timer();
 
-//        uint32_t periph_link_cnt = ble_conn_state_n_peripherals();    // Number of peripheral links.
-//        if (periph_link_cnt  == NRF_SDH_BLE_PERIPHERAL_LINK_COUNT)
-//        {
-//                err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_LOCAL_HOST_TERMINATED_CONNECTION);
-//                APP_ERROR_CHECK(err_code);
-//        }
+        uint32_t periph_link_cnt = ble_conn_state_n_peripherals();   // Number of peripheral links.
+        if (periph_link_cnt  == NRF_SDH_BLE_PERIPHERAL_LINK_COUNT)
+        {
+                NRF_LOG_INFO("Disconnect the original connection handle %d with Host A", m_conn_handle);
+                err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+                APP_ERROR_CHECK(err_code);
+        }
 }
 
 
