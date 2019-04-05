@@ -161,7 +161,7 @@ APP_TIMER_DEF(m_heart_rate_timer_id);                               /**< Heart r
 APP_TIMER_DEF(m_rr_interval_timer_id);                              /**< RR interval timer. */
 APP_TIMER_DEF(m_sensor_contact_timer_id);                           /**< Sensor contact detected timer. */
 
-#define ADVERTISING_BOND_TIME_INTERVAL                               APP_TIMER_TICKS(10000)
+#define ADVERTISING_BOND_TIME_INTERVAL                               APP_TIMER_TICKS(30000)
 APP_TIMER_DEF(m_advertising_bond_timer_id);                                     /**< Advertising time for the bonding with 2nd host. */
 static bool advertising_bond_timer_is_running = false;
 static pm_peer_id_t m_bonded_peer_id;                                      /**< Peer ID of the current bonded central. */
@@ -402,7 +402,7 @@ static void pm_evt_handler(pm_evt_t const * p_evt)
 {
         ret_code_t err_code;
 
-        NRF_LOG_INFO("pm_evt_handler, evt_id = %x", p_evt->evt_id);
+        //NRF_LOG_DEBUG("pm_evt_handler, evt_id = %x", p_evt->evt_id);
 
         switch (p_evt->evt_id)
         {
@@ -1303,11 +1303,6 @@ static void button_event_handler(uint8_t pin_no, uint8_t button_action)
                         delete_bonds();
                 }
 
-                // err_code = led_status_send_to_all(button_action);
-                // if (err_code == NRF_SUCCESS)
-                // {
-                //         NRF_LOG_INFO("Sent button state change to all connected centrals.");
-                // }
                 break;
         case BONDING_BUTTON:
                 if (button_action == APP_BUTTON_PUSH)
