@@ -39,3 +39,5 @@ This example code is to show how to bond with another host B if the device is co
 The project may need modifications to work with later versions or other boards. 
 
 To compile it, clone the repository in the /nRF5_SDK_14.2.0/examples/ directory.
+
+All the details can be found at [link](https://jimmywongbluetooth.wordpress.com/2019/04/05/how-to-bond-with-another-host-b-central-during-device-is-connecting-to-bonded-host-a/).
