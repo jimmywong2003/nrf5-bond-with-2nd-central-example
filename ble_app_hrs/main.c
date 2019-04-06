@@ -89,8 +89,9 @@
 
 #define ADVERTISING_LED                 BSP_BOARD_LED_0                         /**< Is on when device is advertising. */
 #define CONNECTED_LED                   BSP_BOARD_LED_1                         /**< Is on when device has connected. */
-#define WHITELIST_ADV_LED               BSP_BOARD_LED_2                         /**< LED to be toggled with the help of the LED Button Service. */
-#define BONDING_LED                     BSP_BOARD_LED_3                         /**< LED to be toggled with the help of the LED Button Service. */
+#define BONDING_LED                     BSP_BOARD_LED_2                         /**< Is on when device is advertising for 2nd connection. */
+#define CONNECTED_2_LED                 BSP_BOARD_LED_3                         /**< Is on when device has connected with 2nd host. */
+
 #define REMOVE_BOND_BUTTON              BSP_BUTTON_0                            /**< Button that will trigger the notification event with the LED Button Service */
 #define BONDING_BUTTON                  BSP_BUTTON_1                            /**< Button that will trigger the notification event with the LED Button Service */
 
@@ -162,9 +163,10 @@ APP_TIMER_DEF(m_rr_interval_timer_id);                              /**< RR inte
 APP_TIMER_DEF(m_sensor_contact_timer_id);                           /**< Sensor contact detected timer. */
 
 #define ADVERTISING_BOND_TIME_INTERVAL                               APP_TIMER_TICKS(30000)
-APP_TIMER_DEF(m_advertising_bond_timer_id);                                     /**< Advertising time for the bonding with 2nd host. */
-static bool advertising_bond_timer_is_running = false;
+APP_TIMER_DEF(m_advertising_bond_timer_id);                                /**< Advertising time for the bonding with 2nd host. */
+static bool advertising_bond_timer_is_running = false;                     /**< Flag Avertising timer status for bonding with 2nd host. */
 static pm_peer_id_t m_bonded_peer_id;                                      /**< Peer ID of the current bonded central. */
+static bool m_bond_second_host_is_running = false;
 
 static uint16_t m_conn_handle         = BLE_CONN_HANDLE_INVALID;    /**< Handle of the current connection. */
 static bool m_rr_interval_enabled = true;                           /**< Flag for enabling and disabling the registration of new RR interval measurements (the purpose of disabling this is just to test sending HRM without RR interval data. */
@@ -245,10 +247,10 @@ static void delete_bonds(void)
 
 /**@brief Function for starting advertising.
  */
-void advertising_start(bool whitelist)
+void advertising_start(bool b_whitelist)
 {
-        ret_code_t ret;
-        if (whitelist == true)
+        ret_code_t ret = NRF_SUCCESS;
+        if (b_whitelist)
         {
                 memset(m_whitelist_peers, PM_PEER_ID_INVALID, sizeof(m_whitelist_peers));
                 m_whitelist_peer_cnt = (sizeof(m_whitelist_peers) / sizeof(pm_peer_id_t));
@@ -269,10 +271,13 @@ void advertising_start(bool whitelist)
                                 APP_ERROR_CHECK(ret);
                         }
                         NRF_LOG_INFO("Advertising with whitelist");
+                        bsp_board_led_on(ADVERTISING_LED);
+
                 }
                 else
                 {
                         NRF_LOG_INFO("Peer record is empty. Without Whiltelist");
+                        bsp_board_led_on(BONDING_LED);
                 }
 
                 ret = ble_advertising_start(&m_advertising, BLE_ADV_MODE_FAST);
@@ -291,8 +296,6 @@ void advertising_start(bool whitelist)
                 }
         }
 }
-
-
 
 /**@brief Function for handling File Data Storage events.
  *
@@ -315,8 +318,8 @@ static void stop_advertising_bond_timer(void)
                 err_code = app_timer_stop(m_advertising_bond_timer_id);
                 APP_ERROR_CHECK(err_code);
                 advertising_bond_timer_is_running = false;
+                m_bond_second_host_is_running = false;
         }
-
 }
 
 static void advertising_bond_timeout_handler(void * p_context)
@@ -328,6 +331,7 @@ static void advertising_bond_timeout_handler(void * p_context)
         {
                 NRF_LOG_INFO("Stop advertising for bonding!!!");
                 (void) sd_ble_gap_adv_stop();
+                m_bond_second_host_is_running = false;
         }
 }
 
@@ -336,6 +340,11 @@ static void on_advertising_for_bond_request(void)
         uint32_t err_code = NRF_SUCCESS;
 
         uint32_t periph_link_cnt = ble_conn_state_n_peripherals(); // Number of peripheral links.
+
+        if (m_bond_second_host_is_running)
+                return;
+
+        // if the device is already connected to 1 host, it would start the 2nd advertising.
         if (periph_link_cnt == 1)//NRF_SDH_BLE_PERIPHERAL_LINK_COUNT)
         {
                 // Create timers.
@@ -349,6 +358,8 @@ static void on_advertising_for_bond_request(void)
                 APP_ERROR_CHECK(err_code);
 
                 advertising_bond_timer_is_running = true;
+
+                m_bond_second_host_is_running = true;
 
                 NRF_LOG_INFO("Press button BONDING_BUTTON");
                 NRF_LOG_INFO("Start Advertising bonding for 2nd host!!");
@@ -366,11 +377,10 @@ static void on_bonded (pm_peer_id_t const * p_handle, uint16_t event_size)
         uint32_t n_peer, i;
         pm_peer_id_t peer_id, peer_id_prev = PM_PEER_ID_INVALID;
 
-
-
         n_peer = pm_peer_count();
 
         NRF_LOG_INFO("on_bonded: # peer %d, delete all except peer id = %d", n_peer, m_bonded_peer_id);
+
         for (i = 0; i < n_peer; i++)
         {
                 peer_id      = pm_next_peer_id_get (peer_id_prev);
@@ -382,11 +392,14 @@ static void on_bonded (pm_peer_id_t const * p_handle, uint16_t event_size)
                         APP_ERROR_CHECK(err_code);
                 }
         }
+
+        // Stop the advertising bonding timer
         stop_advertising_bond_timer();
 
         uint32_t periph_link_cnt = ble_conn_state_n_peripherals();   // Number of peripheral links.
         if (periph_link_cnt  == NRF_SDH_BLE_PERIPHERAL_LINK_COUNT)
         {
+                bsp_board_led_off(BONDING_LED);
                 NRF_LOG_INFO("Disconnect the original connection handle %d with Host A", m_conn_handle);
                 err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
                 APP_ERROR_CHECK(err_code);
@@ -431,7 +444,6 @@ static void pm_evt_handler(pm_evt_t const * p_evt)
 
                 case PM_LINK_SECURED_PROCEDURE_BONDING:
                         NRF_LOG_INFO("PM_LINK_SECURED_PROCEDURE_BONDING succeed: Bonding has been successful.\r\n");
-
 
                         // // New bond. Clear the old ones.
                         m_bonded_peer_id = p_evt->peer_id;
@@ -522,43 +534,32 @@ static void pm_evt_handler(pm_evt_t const * p_evt)
                                      m_whitelist_peer_cnt + 1,
                                      BLE_GAP_WHITELIST_ADDR_MAX_COUNT);
 
-                        // // Note: You should check on what kind of white list policy your application should use.
-                        //
-                        // if (m_whitelist_peer_cnt < BLE_GAP_WHITELIST_ADDR_MAX_COUNT)
-                        // {
-                        //         // Bonded to a new peer, add it to the whitelist.
-                        //         m_whitelist_peers[m_whitelist_peer_cnt++] = m_peer_id;
-                        //
-                        //         // The whitelist has been modified, update it in the Peer Manager.
-                        //         err_code = pm_device_identities_list_set(m_whitelist_peers, m_whitelist_peer_cnt);
-                        //         if (err_code != NRF_ERROR_NOT_SUPPORTED)
-                        //         {
-                        //                 APP_ERROR_CHECK(err_code);
-                        //         }
-                        //
-                        //         err_code = pm_whitelist_set(m_whitelist_peers, m_whitelist_peer_cnt);
-                        //         APP_ERROR_CHECK(err_code);
-                        // }
 
-                        memset(m_whitelist_peers, PM_PEER_ID_INVALID, sizeof(m_whitelist_peers));
-                        m_whitelist_peer_cnt = (sizeof(m_whitelist_peers) / sizeof(pm_peer_id_t));
-
-                        peer_list_get(m_whitelist_peers, &m_whitelist_peer_cnt);
-
-                        err_code = pm_whitelist_set(m_whitelist_peers, m_whitelist_peer_cnt);
-                        APP_ERROR_CHECK(err_code);
-
-                        if (m_whitelist_peer_cnt > 0)
+                        if (m_whitelist_peer_cnt < BLE_GAP_WHITELIST_ADDR_MAX_COUNT)
                         {
-                                // Setup the device identies list.
-                                // Some SoftDevices do not support this feature.
-                                err_code = pm_device_identities_list_set(m_whitelist_peers, m_whitelist_peer_cnt);
-                                if (err_code != NRF_ERROR_NOT_SUPPORTED)
+                                memset(m_whitelist_peers, PM_PEER_ID_INVALID, sizeof(m_whitelist_peers));
+                                m_whitelist_peer_cnt = (sizeof(m_whitelist_peers) / sizeof(pm_peer_id_t));
+
+                                peer_list_get(m_whitelist_peers, &m_whitelist_peer_cnt);
+
+                                err_code = pm_whitelist_set(m_whitelist_peers, m_whitelist_peer_cnt);
+                                APP_ERROR_CHECK(err_code);
+
+                                if (m_whitelist_peer_cnt > 0)
                                 {
-                                        APP_ERROR_CHECK(err_code);
+                                        // Setup the device identies list.
+                                        // Some SoftDevices do not support this feature.
+                                        err_code = pm_device_identities_list_set(m_whitelist_peers, m_whitelist_peer_cnt);
+                                        if (err_code != NRF_ERROR_NOT_SUPPORTED)
+                                        {
+                                                APP_ERROR_CHECK(err_code);
+                                        }
+                                        NRF_LOG_INFO("Advertising with whitelist");
                                 }
-                                NRF_LOG_INFO("Advertising with whitelist");
+
                         }
+
+
 
                 }
         } break;
@@ -1074,29 +1075,22 @@ static void on_connected(const ble_gap_evt_t * const p_gap_evt)
         uint32_t periph_link_cnt = ble_conn_state_n_peripherals(); // Number of peripheral links.
 
         NRF_LOG_INFO("Connection with link 0x%x established.", p_gap_evt->conn_handle);
-        // Update LEDs
-        bsp_board_led_on(CONNECTED_LED);
 
+        // Update LEDs
         // first device connection
         if (periph_link_cnt == 1)
         {
                 m_conn_handle  = p_gap_evt->conn_handle;
+                bsp_board_led_off(ADVERTISING_LED);
+                bsp_board_led_off(BONDING_LED);
+                bsp_board_led_on(CONNECTED_LED);
+        }
+        else if (periph_link_cnt == NRF_SDH_BLE_PERIPHERAL_LINK_COUNT)
+        {
+                bsp_board_led_off(BONDING_LED);
+                bsp_board_led_on(CONNECTED_2_LED);
         }
 
-//         err_code = app_button_enable();
-//         APP_ERROR_CHECK(err_code);
-//
-//         // Update LEDs
-//         bsp_board_led_on(CONNECTED_LED);
-//         if (periph_link_cnt == NRF_SDH_BLE_PERIPHERAL_LINK_COUNT)
-//         {
-//                 bsp_board_led_off(ADVERTISING_LED);
-//         }
-//         else
-//         {
-//                 // Continue advertising. More connections can be established because the maximum link count has not been reached.
-// //                advertising_start();
-//         }
 }
 
 /**@brief Function for handling the Disconnected event.
@@ -1114,24 +1108,16 @@ static void on_disconnected(ble_gap_evt_t const * const p_gap_evt)
 
         if (m_conn_handle == p_gap_evt->conn_handle)
         {
+                bsp_board_led_off(CONNECTED_LED);
                 m_conn_handle = BLE_CONN_HANDLE_INVALID;
         }
+
         if (periph_link_cnt == 0)
         {
                 advertising_start(true);
+                bsp_board_led_off(CONNECTED_LED);
+                bsp_board_led_off(CONNECTED_2_LED);
         }
-        // if (periph_link_cnt == 0)
-        // {
-        //         bsp_board_led_off(CONNECTED_LED);
-        //         err_code = app_button_disable();
-        //         APP_ERROR_CHECK(err_code);
-        // }
-        //
-        // if (periph_link_cnt == (NRF_SDH_BLE_PERIPHERAL_LINK_COUNT - 1))
-        // {
-        //         // Advertising is not running when all connections are taken, and must therefore be started.
-        //         advertising_start();
-        // }
 }
 
 
@@ -1148,21 +1134,12 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
         {
         case BLE_GAP_EVT_CONNECTED:
                 NRF_LOG_INFO("Connected.");
-                // err_code = bsp_indication_set(BSP_INDICATE_CONNECTED);
-                // APP_ERROR_CHECK(err_code);
-                // m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
-
                 on_connected(&p_ble_evt->evt.gap_evt);
                 break;
 
         case BLE_GAP_EVT_DISCONNECTED:
-
+                NRF_LOG_INFO("Disconnected.");
                 on_disconnected(&p_ble_evt->evt.gap_evt);
-                // NRF_LOG_INFO("Disconnected, reason %d.",
-                //              p_ble_evt->evt.gap_evt.params.disconnected.reason);
-                // m_conn_handle = BLE_CONN_HANDLE_INVALID;
-                // uint32_t periph_link_cnt = ble_conn_state_n_peripherals();    // Number of peripheral links.
-
                 break;
 
 #ifndef S140
@@ -1307,6 +1284,7 @@ static void button_event_handler(uint8_t pin_no, uint8_t button_action)
         case BONDING_BUTTON:
                 if (button_action == APP_BUTTON_PUSH)
                 {
+                        NRF_LOG_INFO("Press bond button to start the advertising without whitelist");
                         on_advertising_for_bond_request();
                 }
                 break;
@@ -1315,48 +1293,7 @@ static void button_event_handler(uint8_t pin_no, uint8_t button_action)
                 break;
         }
 }
-///**@brief Function for handling events from the BSP module.
-// *
-// * @param[in]   event   Event generated by button press.
-// */
-//void bsp_event_handler(bsp_event_t event)
-//{
-//        ret_code_t err_code;
-//
-//        switch (event)
-//        {
-////        case BSP_EVENT_SLEEP:
-////                sleep_mode_enter();
-////                break;
-//
-//        case BSP_EVENT_DISCONNECT:
-//                err_code = sd_ble_gap_disconnect(m_conn_handle,
-//                                                 BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-//                if (err_code != NRF_ERROR_INVALID_STATE)
-//                {
-//                        APP_ERROR_CHECK(err_code);
-//                }
-//                break;
-//
-//
-//
-//        case BSP_EVENT_WHITELIST_OFF:
-//        case BSP_EVENT_KEY_1:
-//                if (m_conn_handle == BLE_CONN_HANDLE_INVALID)
-//                {
-//                        NRF_LOG_INFO("Restart the advertising without whitelist");
-//                        err_code = ble_advertising_restart_without_whitelist(&m_advertising);
-//                        if (err_code != NRF_ERROR_INVALID_STATE)
-//                        {
-//                                APP_ERROR_CHECK(err_code);
-//                        }
-//                }
-//                break;
-//
-//        default:
-//                break;
-//        }
-//}
+
 
 
 /**@brief Function for the Peer Manager initialization.
@@ -1495,7 +1432,10 @@ int main(void)
         NRF_LOG_INFO("Heart Rate Sensor example started.");
         application_timers_start();
 
+        // Start the advertising
         advertising_start(true);
+
+        // Enable the button
         err_code = app_button_enable();
         APP_ERROR_CHECK(err_code);
 
