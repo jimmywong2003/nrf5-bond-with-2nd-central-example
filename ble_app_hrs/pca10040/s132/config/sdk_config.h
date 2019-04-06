@@ -3180,7 +3180,7 @@
 // <4=> Debug 
 
 #ifndef NRF_LOG_DEFAULT_LEVEL
-#define NRF_LOG_DEFAULT_LEVEL 4
+#define NRF_LOG_DEFAULT_LEVEL 3
 #endif
 
 // <q> NRF_LOG_DEFERRED  - Enable deffered logger.
@@ -5258,7 +5258,7 @@
 // <i> These values are not used directly by the SoftDevice handler but the application or other libraries might depend on them.
 // <i> Keep them up-to-date with the desired configuration.
 //==========================================================
-// <o> NRF_SDH_BLE_PERIPHERAL_LINK_COUNT - Maximum number of peripheral links. 
+  
 #ifndef NRF_SDH_BLE_PERIPHERAL_LINK_COUNT
 #define NRF_SDH_BLE_PERIPHERAL_LINK_COUNT 2
 #endif
